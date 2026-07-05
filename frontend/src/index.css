@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base resets that Tailwind doesn't cover */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: #000;
+  color: #e7e5e4; /* stone-100 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100svh;
+  display: flex;
+}
+
+/* Scrollbar styling for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0c0a09; /* stone-950 */
+}
+::-webkit-scrollbar-thumb {
+  background: #292524; /* stone-800 */
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #44403c; /* stone-700 */
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .member-print-card,
+  .member-print-card * {
+    visibility: visible;
+  }
+
+  .member-print-card {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    border: none !important;
+    box-shadow: none !important;
+  }
+}
