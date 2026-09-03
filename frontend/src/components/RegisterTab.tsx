@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import Webcam from 'react-webcam';
 import { Camera, Loader2, CheckCircle2, AlertTriangle, ImageIcon, X } from 'lucide-react';
 import { useGymSettings } from '../context/GymSettingsContext';
+import { useAuth } from '../context/AuthContext';
 import MemberPrintCard from './MemberPrintCard';
 
 interface MembershipPlan {
@@ -14,7 +15,6 @@ interface MembershipPlan {
 interface FormState {
   name: string;
   phoneNumber: string;
-  barcodeCode: string;
   membershipTier: string;
   subscriptionEndDate: string;
 }
@@ -22,16 +22,12 @@ interface FormState {
 interface FormErrors {
   name?: string;
   phoneNumber?: string;
-  barcodeCode?: string;
 }
 
 function validate(form: FormState): FormErrors {
   const errors: FormErrors = {};
   if (!form.name.trim()) errors.name = 'Name is required';
   if (!form.phoneNumber.trim()) errors.phoneNumber = 'Phone number is required';
-  if (!form.barcodeCode.trim()) errors.barcodeCode = 'Barcode / ID is required';
-  else if (form.barcodeCode.trim().length < 3)
-    errors.barcodeCode = 'Barcode must be at least 3 characters';
   return errors;
 }
 
@@ -44,6 +40,14 @@ function dataURLtoFile(dataUrl: string, filename: string): File {
   return new File([bytes], filename, { type: mime });
 }
 
+function fileToDataURL(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.readAsDataURL(file);
+  });
+}
+
 /** Compute subscription end date from today + durationDays */
 function calcEndDate(durationDays: number): string {
   const d = new Date();
@@ -54,13 +58,13 @@ function calcEndDate(durationDays: number): string {
 const EMPTY_FORM: FormState = {
   name: '',
   phoneNumber: '',
-  barcodeCode: '',
   membershipTier: '',
   subscriptionEndDate: '',
 };
 
 export default function RegisterTab() {
   const { settings, updateSettings } = useGymSettings();
+  const { authHeader } = useAuth();
   const webcamRef = useRef<Webcam>(null);
 
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
@@ -68,7 +72,8 @@ export default function RegisterTab() {
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
-  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [webcamReady, setWebcamReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
@@ -78,6 +83,21 @@ export default function RegisterTab() {
     membershipTier: string | null;
   } | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [nextBarcode, setNextBarcode] = useState<string>('0001');
+  const [nextBarcodeLoading, setNextBarcodeLoading] = useState(true);
+
+  const loadNextBarcode = () => {
+    setNextBarcodeLoading(true);
+    fetch('/api/customers/next-barcode', { headers: authHeader() })
+      .then((r) => r.json())
+      .then((data: { code: string }) => setNextBarcode(data.code))
+      .catch(() => setNextBarcode('0001'))
+      .finally(() => setNextBarcodeLoading(false));
+  };
+
+  useEffect(() => {
+    loadNextBarcode();
+  }, []);
 
   // Load active membership plans
   useEffect(() => {
@@ -116,7 +136,18 @@ export default function RegisterTab() {
 
   const captureSnapshot = () => {
     const src = webcamRef.current?.getScreenshot();
-    if (src) setCapturedPhoto(src);
+    if (src) {
+      setPhotoPreview(src);
+      setPhotoFile(dataURLtoFile(src, 'photo.jpg'));
+    }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    const dataUrl = await fileToDataURL(file);
+    setPhotoPreview(dataUrl);
   };
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -144,23 +175,24 @@ export default function RegisterTab() {
       const formData = new FormData();
       formData.append('name', form.name.trim());
       formData.append('phoneNumber', form.phoneNumber.trim());
-      formData.append('barcodeCode', form.barcodeCode.trim());
       if (form.membershipTier) formData.append('membershipTier', form.membershipTier);
       if (form.subscriptionEndDate) formData.append('subscriptionEndDate', form.subscriptionEndDate);
 
-      if (capturedPhoto) {
-        formData.append('photo', dataURLtoFile(capturedPhoto, 'photo.jpg'));
+      if (photoFile) {
+        formData.append('photo', photoFile);
       }
 
       const res = await fetch('/api/customers/register', {
         method: 'POST',
+        headers: authHeader(),
         body: formData,
       });
 
       const body = await res.json().catch(() => ({}));
 
       if (res.status === 409) {
-        setApiError(`Barcode "${form.barcodeCode}" is already registered.`);
+        setApiError(body.message ?? 'Member ID already in use. Try again.');
+        loadNextBarcode();
         return;
       }
       if (!res.ok) {
@@ -185,7 +217,9 @@ export default function RegisterTab() {
         membershipTier: firstPlan?.name ?? '',
         subscriptionEndDate: firstPlan ? calcEndDate(firstPlan.durationDays) : '',
       });
-      setCapturedPhoto(null);
+      setPhotoPreview(null);
+      setPhotoFile(null);
+      loadNextBarcode();
     } catch {
       setApiError('Could not reach the server. Check your connection.');
     } finally {
@@ -317,12 +351,15 @@ export default function RegisterTab() {
             <div className="md:col-span-1 space-y-3">
               <label className="block text-[10px] font-bold uppercase tracking-widest text-stone-400">Member Photo</label>
               <div className="relative aspect-square w-full bg-black border border-stone-800 rounded-xl overflow-hidden flex items-center justify-center">
-                {capturedPhoto ? (
+                {photoPreview ? (
                   <>
-                    <img src={capturedPhoto} className="w-full h-full object-cover" alt="Captured" />
+                    <img src={photoPreview} className="w-full h-full object-cover" alt="Selected" />
                     <button
                       type="button"
-                      onClick={() => setCapturedPhoto(null)}
+                      onClick={() => {
+                        setPhotoPreview(null);
+                        setPhotoFile(null);
+                      }}
                       className="absolute top-2 right-2 bg-black/80 rounded-full p-1 text-stone-400 hover:text-red-400"
                     >
                       <X size={12} />
@@ -339,7 +376,7 @@ export default function RegisterTab() {
                   />
                 )}
               </div>
-              {!capturedPhoto && (
+              {!photoPreview && (
                 <button
                   type="button"
                   onClick={captureSnapshot}
@@ -349,6 +386,16 @@ export default function RegisterTab() {
                   <Camera size={12} className="text-red-500" /> Capture Photo
                 </button>
               )}
+              <label className="w-full flex items-center justify-center gap-2 bg-stone-900 hover:bg-stone-800 disabled:opacity-40 text-stone-200 border border-stone-800 font-bold tracking-wider py-2.5 rounded text-[10px] uppercase cursor-pointer transition-colors">
+                <ImageIcon size={12} className="text-red-500" />
+                Upload Photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                />
+              </label>
               <p className="text-[10px] text-stone-600 text-center">Optional but recommended.</p>
             </div>
 
@@ -380,19 +427,21 @@ export default function RegisterTab() {
 
               <div>
                 <label className="block text-[10px] font-bold mb-1.5 uppercase tracking-widest text-stone-400">
-                  Barcode / Member ID *
+                  Member ID (auto)
                 </label>
                 <p className="text-[10px] text-stone-600 mb-1.5">
-                  This value is encoded on the printed card (QR or barcode).
+                  Assigned automatically — encoded on the printed QR / barcode card.
                 </p>
-                <input
-                  type="text"
-                  placeholder="e.g. GYM-00123"
-                  value={form.barcodeCode}
-                  onChange={(e) => setField('barcodeCode', e.target.value)}
-                  className={inputClass(errors.barcodeCode)}
-                />
-                {errors.barcodeCode && <p className="text-red-400 text-[10px] mt-1">{errors.barcodeCode}</p>}
+                <div className="w-full bg-black border border-stone-800 rounded px-4 py-3 text-sm font-mono tracking-[0.3em] text-red-400 font-black flex items-center gap-2">
+                  {nextBarcodeLoading ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin text-stone-600" />
+                      <span className="text-stone-600 text-xs tracking-widest">Loading…</span>
+                    </>
+                  ) : (
+                    nextBarcode
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

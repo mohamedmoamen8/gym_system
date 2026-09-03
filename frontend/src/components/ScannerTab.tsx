@@ -1,9 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   QrCode, ShieldCheck, ShieldAlert, ShieldOff,
-  AlertTriangle, Loader2, CalendarDays, Phone, Tag, Volume2,
+  AlertTriangle, Loader2, CalendarDays, Phone, Tag, Volume2, Camera, X,
 } from 'lucide-react';
+import Webcam from 'react-webcam';
+import jsQR from 'jsqr';
 import { useGymSettings } from '../context/GymSettingsContext';
+import { useAuth } from '../context/AuthContext';
 import { handleScanResult } from '../utils/scanFeedback';
 
 interface Customer {
@@ -15,6 +18,10 @@ interface Customer {
   subscriptionEndDate: string | null;
   photoPath: string | null;
   status: 'Active' | 'Suspended' | 'Expired';
+  /** Server-derived status (e.g. Expired by date even if column is stale). */
+  effectiveStatus?: Customer['status'];
+  /** Server-derived access decision. */
+  accessAllowed?: boolean;
   createdAt: string;
 }
 
@@ -77,29 +84,144 @@ function DaysLeftBadge({ days }: { days: number | null }) {
 
 export default function ScannerTab() {
   const { settings } = useGymSettings();
+  const { authHeader } = useAuth();
   const [manualCode, setManualCode] = useState('');
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [usingCamera, setUsingCamera] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const webcamRef = useRef<Webcam>(null);
+  const scanIntervalRef = useRef<number | null>(null);
+  const lastScannedCodeRef = useRef<string | null>(null);
 
   // Keep input focused for physical barcode scanners
   useEffect(() => {
-    if (!loading) inputRef.current?.focus();
-  }, [loading, customer]);
+    if (!loading && !usingCamera) inputRef.current?.focus();
+  }, [loading, customer, usingCamera]);
+
+  const scanCode = useCallback(async (code: string) => {
+    if (!code || code === lastScannedCodeRef.current) return;
+    lastScannedCodeRef.current = code;
+    setManualCode('');
+    setLoading(true);
+    setError(null);
+    setCustomer(null);
+
+    try {
+      const res = await fetch(`/api/customers/barcode/${encodeURIComponent(code)}`, {
+        headers: authHeader(),
+      });
+      if (res.status === 401) {
+        setError('Session expired. Please sign in again.');
+        handleScanResult({ success: false, welcomeMessage: settings.welcomeMessage, soundEnabled: settings.scanSoundEnabled });
+        return;
+      }
+      if (res.status === 404) {
+        setError(`No member found with barcode "${code}"`);
+        handleScanResult({ success: false, welcomeMessage: settings.welcomeMessage, soundEnabled: settings.scanSoundEnabled });
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.message ?? 'Server error. Please try again.');
+        handleScanResult({ success: false, welcomeMessage: settings.welcomeMessage, soundEnabled: settings.scanSoundEnabled });
+        return;
+      }
+      const data: Customer = await res.json();
+      setCustomer(data);
+      const isAllowed = data.accessAllowed ?? data.status === 'Active';
+      handleScanResult({ success: isAllowed, welcomeMessage: settings.welcomeMessage, memberName: data.name, soundEnabled: settings.scanSoundEnabled });
+    } catch {
+      setError('Could not reach the server. Check your connection.');
+      handleScanResult({ success: false, welcomeMessage: settings.welcomeMessage, soundEnabled: settings.scanSoundEnabled });
+    } finally {
+      setLoading(false);
+    }
+  }, [settings, authHeader]);
+
+  const startCamera = () => {
+    setUsingCamera(true);
+    setScanError(null);
+  };
+
+  const stopCamera = () => {
+    setUsingCamera(false);
+    if (scanIntervalRef.current) {
+      cancelAnimationFrame(scanIntervalRef.current);
+      scanIntervalRef.current = null;
+    }
+  };
+
+  const processVideoFrame = useCallback(() => {
+    if (!usingCamera || !webcamRef.current) {
+      scanIntervalRef.current = requestAnimationFrame(processVideoFrame);
+      return;
+    }
+
+    const screenshot = webcamRef.current.getScreenshot({ width: 320, height: 240 });
+    if (screenshot) {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          scanIntervalRef.current = requestAnimationFrame(processVideoFrame);
+          return;
+        }
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        // Use the data directly - jsQR accepts Uint8Array-like
+        const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+        if (code) {
+          scanCode(code.data);
+          stopCamera();
+          return;
+        }
+      };
+      img.src = screenshot;
+    }
+    scanIntervalRef.current = requestAnimationFrame(processVideoFrame);
+  }, [usingCamera, scanCode]);
+
+  useEffect(() => {
+    if (usingCamera) {
+      scanIntervalRef.current = requestAnimationFrame(processVideoFrame);
+    }
+    return () => {
+      if (scanIntervalRef.current) {
+        cancelAnimationFrame(scanIntervalRef.current);
+      }
+    };
+  }, [usingCamera, processVideoFrame]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const code = manualCode.trim();
     if (!code) return;
 
+    lastScannedCodeRef.current = null;
     setLoading(true);
     setError(null);
     setCustomer(null);
     setManualCode('');
 
     try {
-      const res = await fetch(`/api/customers/barcode/${encodeURIComponent(code)}`);
+      const res = await fetch(`/api/customers/barcode/${encodeURIComponent(code)}`, {
+        headers: authHeader(),
+      });
+      if (res.status === 401) {
+        setError('Session expired. Please sign in again.');
+        handleScanResult({
+          success: false,
+          welcomeMessage: settings.welcomeMessage,
+          soundEnabled: settings.scanSoundEnabled,
+        });
+        return;
+      }
       if (res.status === 404) {
         setError(`No member found with barcode "${code}"`);
         handleScanResult({
@@ -122,7 +244,7 @@ export default function ScannerTab() {
       const data: Customer = await res.json();
       setCustomer(data);
 
-      const isAllowed = data.status === 'Active';
+      const isAllowed = data.accessAllowed ?? data.status === 'Active';
       handleScanResult({
         success: isAllowed,
         welcomeMessage: settings.welcomeMessage,
@@ -155,10 +277,52 @@ export default function ScannerTab() {
         {settings.scanSoundEnabled && (
           <p className="text-stone-600 text-[10px] tracking-wider uppercase mt-2 flex items-center gap-1.5">
             <Volume2 size={10} className="text-red-500/70" />
-            Sound on — &ldquo;{settings.welcomeMessage.replace(/\{name\}/gi, '…')}&rdquo;
+            Sound on — "{settings.welcomeMessage.replace(/\{name\}/gi, '…')}"
           </p>
         )}
       </header>
+
+      {/* Camera scanner */}
+      {!customer && (
+        <div className="bg-stone-900 border border-stone-800 rounded-xl overflow-hidden">
+          {!usingCamera ? (
+            <button
+              type="button"
+              onClick={startCamera}
+              className="w-full flex items-center justify-center gap-2 bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold py-4 text-xs uppercase tracking-widest transition-colors"
+            >
+              <Camera size={16} className="text-red-500" />
+              Use Camera Scanner
+            </button>
+          ) : (
+            <div className="relative">
+              <Webcam
+                audio={false}
+                ref={webcamRef}
+                screenshotFormat="image/jpeg"
+                onUserMediaError={() => {
+                  setScanError('Camera not available. Please use manual input.');
+                  setUsingCamera(false);
+                }}
+                className="w-full h-64 object-cover"
+              />
+              <button
+                type="button"
+                onClick={stopCamera}
+                className="absolute top-2 right-2 bg-black/80 rounded-full p-1 text-stone-400 hover:text-red-400"
+              >
+                <X size={14} />
+              </button>
+              <div className="p-3 text-center text-[10px] text-stone-400 uppercase tracking-wider">
+                Point camera at QR/barcode
+              </div>
+              {scanError && (
+                <p className="p-2 text-red-400 text-[10px]">{scanError}</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Input bar */}
       <form onSubmit={handleSubmit} className="flex gap-3">
@@ -194,12 +358,12 @@ export default function ScannerTab() {
       {customer && (
         <div className="bg-stone-900 border border-stone-800 rounded-xl overflow-hidden shadow-2xl">
           {/* Top colored strip based on status */}
-          <div
-            className={`h-1 w-full ${
-              customer.status === 'Active' ? 'bg-green-500' :
-              customer.status === 'Suspended' ? 'bg-yellow-500' : 'bg-red-500'
-            }`}
-          />
+            <div
+              className={`h-1 w-full ${
+                (customer.effectiveStatus ?? customer.status) === 'Active' ? 'bg-green-500' :
+                (customer.effectiveStatus ?? customer.status) === 'Suspended' ? 'bg-yellow-500' : 'bg-red-500'
+              }`}
+            />
 
           <div className="p-6 flex gap-6 items-start">
             {/* Photo */}
@@ -221,7 +385,7 @@ export default function ScannerTab() {
             <div className="flex-1 min-w-0 space-y-4">
               {/* Name + status */}
               <div>
-                <StatusBadge status={customer.status} />
+                <StatusBadge status={customer.effectiveStatus ?? customer.status} />
                 <h2 className="text-4xl font-black tracking-tighter text-stone-100 uppercase mt-2 truncate">
                   {customer.name}
                 </h2>

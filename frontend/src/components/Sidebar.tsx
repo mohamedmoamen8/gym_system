@@ -1,9 +1,9 @@
 import React from 'react';
-import { QrCode, MessageSquare, UserPlus, Shield, CreditCard, LogOut } from 'lucide-react';
+import { LayoutDashboard, QrCode, MessageSquare, UserPlus, Shield, CreditCard, LogOut, Users, DollarSign } from 'lucide-react';
 import { useGymSettings } from '../context/GymSettingsContext';
 import { useAuth } from '../context/AuthContext';
 
-type Tab = 'scan' | 'register' | 'broadcast' | 'captains' | 'subscriptions';
+type Tab = 'dashboard' | 'scan' | 'register' | 'broadcast' | 'captains' | 'subscriptions' | 'members' | 'staff' | 'payments';
 
 interface SidebarProps {
   activeTab: Tab;
@@ -11,11 +11,15 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: 'dashboard',     label: 'Dashboard',        icon: <LayoutDashboard size={16} /> },
   { id: 'scan',          label: 'Front Desk Scanner', icon: <QrCode size={16} /> },
   { id: 'register',      label: 'Register Member',    icon: <UserPlus size={16} /> },
+  { id: 'members',       label: 'Members',            icon: <Users size={16} /> },
   { id: 'subscriptions', label: 'Membership Plans',   icon: <CreditCard size={16} /> },
-  { id: 'broadcast',     label: 'Broadcast',          icon: <MessageSquare size={16} /> },
+  { id: 'payments',      label: 'Payments',           icon: <DollarSign size={16} /> },
+  { id: 'staff',         label: 'Staff',              icon: <Shield size={16} /> },
   { id: 'captains',      label: 'Captain Station',    icon: <Shield size={16} /> },
+  { id: 'broadcast',     label: 'Broadcast',          icon: <MessageSquare size={16} /> },
 ];
 
 export default function Sidebar({ activeTab, setActiveTab }: SidebarProps) {

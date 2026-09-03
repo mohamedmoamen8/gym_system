@@ -6,6 +6,7 @@ const USER_KEY = 'gym_user';
 interface AuthState {
   token: string | null;
   username: string | null;
+  mustChangePassword: boolean;
 }
 
 interface AuthContextType {
@@ -19,18 +20,18 @@ function loadAuth(): AuthState {
   try {
     const token = localStorage.getItem(TOKEN_KEY);
     const username = localStorage.getItem(USER_KEY);
-    if (!token) return { token: null, username: null };
-
-    // Decode the JWT payload and check expiry without a library
+    const mustChangePassword = localStorage.getItem('gym_must_change') === '1';
+    if (!token) return { token: null, username: null, mustChangePassword: false };
     const payload = JSON.parse(atob(token.split('.')[1]));
     if (payload.exp && payload.exp * 1000 < Date.now()) {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
-      return { token: null, username: null };
+      localStorage.removeItem('gym_must_change');
+      return { token: null, username: null, mustChangePassword: false };
     }
-    return { token, username };
+    return { token, username, mustChangePassword };
   } catch {
-    return { token: null, username: null };
+    return { token: null, username: null, mustChangePassword: false };
   }
 }
 
@@ -52,16 +53,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(body.message ?? 'Login failed');
     }
 
-    const data = await res.json() as { access_token: string; username: string };
+    const data = await res.json() as { access_token: string; username: string; mustChangePassword: boolean };
     localStorage.setItem(TOKEN_KEY, data.access_token);
     localStorage.setItem(USER_KEY, data.username);
-    setAuth({ token: data.access_token, username: data.username });
+    localStorage.setItem('gym_must_change', data.mustChangePassword ? '1' : '0');
+    setAuth({ token: data.access_token, username: data.username, mustChangePassword: data.mustChangePassword });
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
-    setAuth({ token: null, username: null });
+    localStorage.removeItem('gym_must_change');
+    setAuth({ token: null, username: null, mustChangePassword: false });
   }, []);
 
   /** Returns the Authorization header object to spread into fetch options */

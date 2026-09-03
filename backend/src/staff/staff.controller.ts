@@ -11,12 +11,14 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { StaffService } from './staff.service';
 import { CreateCaptainDto, UpdateCaptainDto, ClockTriggerDto } from './staff.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 const photoStorage = diskStorage({
   destination: './storage/photos',
@@ -26,12 +28,20 @@ const photoStorage = diskStorage({
   },
 });
 
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+const captainFileFilter = (_req: any, file: Express.Multer.File, cb: any) => {
+  if (ALLOWED_MIME.has(file.mimetype)) return cb(null, true);
+  cb(new Error('Invalid image type. Only jpg, png, webp are allowed.'));
+};
+
 @Controller('staff')
 export class StaffController {
   constructor(private readonly staffService: StaffService) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('photo', { storage: photoStorage }))
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(FileInterceptor('photo', { storage: photoStorage, fileFilter: captainFileFilter, limits: { fileSize: 2 * 1024 * 1024 } }))
   create(
     @Body() dto: CreateCaptainDto,
     @UploadedFile() file: Express.Multer.File,
@@ -41,6 +51,7 @@ export class StaffController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard)
   findAll() {
     return this.staffService.findAll();
   }
@@ -52,11 +63,13 @@ export class StaffController {
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard)
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.staffService.findOne(id);
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard)
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCaptainDto,
@@ -65,6 +78,7 @@ export class StaffController {
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.staffService.remove(id);

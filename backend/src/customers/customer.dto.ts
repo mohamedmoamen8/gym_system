@@ -9,10 +9,11 @@ export class RegisterCustomerDto {
   @IsNotEmpty({ message: 'Phone number is required' })
   phoneNumber!: string;
 
+  /** Omit to auto-assign the next 4-digit code (0001, 0002, …). */
+  @IsOptional()
   @IsString()
-  @IsNotEmpty({ message: 'Barcode code is required' })
-  @MinLength(3, { message: 'Barcode must be at least 3 characters' })
-  barcodeCode!: string;
+  @MinLength(1, { message: 'Barcode must not be empty' })
+  barcodeCode?: string;
 
   @IsOptional()
   @IsString()

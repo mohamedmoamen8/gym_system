@@ -14,6 +14,9 @@ export class Owner {
   @Column({ default: 'Owner' })
   role!: string;
 
+  @Column({ default: true })
+  mustChangePassword!: boolean;
+
   @CreateDateColumn()
   createdAt!: Date;
 }

@@ -116,10 +116,6 @@ export default function LoginPage() {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
-
-          <p className="text-center text-stone-700 text-[10px] tracking-wider">
-            Default credentials: <span className="text-stone-500 font-mono">owner / gym1234</span>
-          </p>
         </div>
       </div>
     </div>

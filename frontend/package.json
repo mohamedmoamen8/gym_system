@@ -12,11 +12,13 @@
   "dependencies": {
     "@types/jsbarcode": "^3.11.4",
     "jsbarcode": "^3.12.3",
+    "jsqr": "^1.4.0",
     "lucide-react": "^1.23.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-webcam": "^7.2.0"
+    "react-webcam": "^7.2.0",
+    "recharts": "^3.9.2"
   },
   "devDependencies": {
     "@types/node": "^24.13.2",

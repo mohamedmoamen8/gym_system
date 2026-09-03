@@ -1,23 +1,20 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-
-const STORAGE_KEY = 'gym_settings';
+import { useAuth } from './AuthContext';
 
 export type MemberCodeType = 'qr' | 'barcode';
 
-interface GymSettings {
+export interface GymSettings {
   name: string;
   logo: string | null;
-  /** Spoken on successful scan. Use {name} for member name. */
   welcomeMessage: string;
-  /** Play click + voice when a member is scanned in. */
   scanSoundEnabled: boolean;
-  /** What to print on member cards — QR code or linear barcode. */
   memberCodeType: MemberCodeType;
 }
 
 interface GymSettingsContextType {
   settings: GymSettings;
-  updateSettings: (patch: Partial<GymSettings>) => void;
+  updateSettings: (patch: Partial<GymSettings>) => Promise<void>;
+  loading: boolean;
 }
 
 const DEFAULT_SETTINGS: GymSettings = {
@@ -28,38 +25,70 @@ const DEFAULT_SETTINGS: GymSettings = {
   memberCodeType: 'qr',
 };
 
-function loadSettings(): GymSettings {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_SETTINGS;
-    const parsed = JSON.parse(raw) as Partial<GymSettings>;
-    return {
-      name: parsed.name ?? DEFAULT_SETTINGS.name,
-      logo: parsed.logo ?? DEFAULT_SETTINGS.logo,
-      welcomeMessage: parsed.welcomeMessage ?? DEFAULT_SETTINGS.welcomeMessage,
-      scanSoundEnabled: parsed.scanSoundEnabled ?? DEFAULT_SETTINGS.scanSoundEnabled,
-      memberCodeType: parsed.memberCodeType ?? DEFAULT_SETTINGS.memberCodeType,
-    };
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
+function coerce(raw: Record<string, string | null> | null): GymSettings {
+  const src = raw ?? {};
+  return {
+    name: src.name ?? DEFAULT_SETTINGS.name,
+    logo: src.logo ?? DEFAULT_SETTINGS.logo,
+    welcomeMessage: src.welcomeMessage ?? DEFAULT_SETTINGS.welcomeMessage,
+    scanSoundEnabled: src.scanSoundEnabled ? src.scanSoundEnabled !== 'false' : DEFAULT_SETTINGS.scanSoundEnabled,
+    memberCodeType: src.memberCodeType === 'barcode' ? 'barcode' : 'qr',
+  };
 }
 
 const GymSettingsContext = createContext<GymSettingsContextType | undefined>(undefined);
 
 export function GymSettingsProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<GymSettings>(loadSettings);
+  const [settings, setSettings] = useState<GymSettings>(DEFAULT_SETTINGS);
+  const [loading, setLoading] = useState(true);
+  const { authHeader } = useAuth();
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  }, [settings]);
+    let cancelled = false;
+    setLoading(true);
+    fetch('/api/settings', { headers: authHeader() })
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((rows: { key: string; value: string | null }[]) => {
+        if (!cancelled) {
+          const map: Record<string, string | null> = {};
+          rows.forEach((r) => { map[r.key] = r.value; });
+          setSettings(coerce(map));
+        }
+      })
+      .catch(() => setSettings(coerce(null)))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [authHeader]);
 
-  const updateSettings = (patch: Partial<GymSettings>) => {
-    setSettings((prev) => ({ ...prev, ...patch }));
+  const updateSettings = async (patch: Partial<GymSettings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      void persist(next);
+      return next;
+    });
   };
 
+  async function persist(next: GymSettings) {
+    const entries: [string, string | null][] = [
+      ['name', next.name],
+      ['logo', next.logo],
+      ['welcomeMessage', next.welcomeMessage],
+      ['scanSoundEnabled', String(next.scanSoundEnabled)],
+      ['memberCodeType', next.memberCodeType],
+    ];
+    await Promise.all(
+      entries.map(([key, value]) =>
+        fetch(`/api/settings/${encodeURIComponent(key)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader() },
+          body: JSON.stringify({ value }),
+        }).catch(() => {}),
+      ),
+    );
+  }
+
   return (
-    <GymSettingsContext.Provider value={{ settings, updateSettings }}>
+    <GymSettingsContext.Provider value={{ settings, updateSettings, loading }}>
       {children}
     </GymSettingsContext.Provider>
   );

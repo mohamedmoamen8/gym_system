@@ -5,6 +5,9 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { AuthService } from './auth/auth.service';
+import { SettingsService } from './settings/settings.service';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { Reflector } from '@nestjs/core';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -34,6 +37,10 @@ async function bootstrap() {
 
   // All API routes live under /api
   app.setGlobalPrefix('api');
+
+  // Seed default gym settings on first run
+  const settingsService = app.get(SettingsService);
+  await settingsService.seed();
 
   // Seed default owner account on first run
   const authService = app.get(AuthService);

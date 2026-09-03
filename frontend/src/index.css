@@ -44,7 +44,7 @@ body {
 
   .member-print-card,
   .member-print-card * {
-    visibility: visible;
+    visibility: visible !important;
   }
 
   .member-print-card {
@@ -54,5 +54,12 @@ body {
     transform: translate(-50%, -50%);
     border: none !important;
     box-shadow: none !important;
+    width: auto !important;
+    height: auto !important;
+    page-break-inside: avoid;
+  }
+
+  .print-trigger {
+    display: none;
   }
 }

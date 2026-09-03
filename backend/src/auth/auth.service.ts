@@ -27,13 +27,13 @@ export class AuthService {
     const password = process.env.OWNER_PASSWORD ?? 'gym1234';
     const passwordHash = await bcrypt.hash(password, 10);
 
-    const owner = this.ownerRepo.create({ username, passwordHash });
+    const owner = this.ownerRepo.create({ username, passwordHash, mustChangePassword: true });
     await this.ownerRepo.save(owner);
     console.log(`✅ Default owner seeded — username: "${username}" password: "${password}"`);
     console.log('   Change these via OWNER_USERNAME / OWNER_PASSWORD env vars.');
   }
 
-  async login(dto: LoginDto): Promise<{ access_token: string; username: string }> {
+  async login(dto: LoginDto): Promise<{ access_token: string; username: string; mustChangePassword: boolean }> {
     const owner = await this.ownerRepo.findOneBy({ username: dto.username });
     if (!owner) throw new UnauthorizedException('Invalid credentials');
 
@@ -42,7 +42,7 @@ export class AuthService {
 
     const payload = { sub: owner.id, username: owner.username, role: owner.role };
     const access_token = this.jwtService.sign(payload);
-    return { access_token, username: owner.username };
+    return { access_token, username: owner.username, mustChangePassword: owner.mustChangePassword };
   }
 
   async changePassword(
@@ -57,6 +57,7 @@ export class AuthService {
     if (!valid) throw new UnauthorizedException('Current password is incorrect');
 
     owner.passwordHash = await bcrypt.hash(newPassword, 10);
+    owner.mustChangePassword = false;
     await this.ownerRepo.save(owner);
   }
 }

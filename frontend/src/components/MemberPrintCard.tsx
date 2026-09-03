@@ -19,10 +19,10 @@ function BarcodeSvg({ value }: { value: string }) {
       JsBarcode(svgRef.current, value, {
         format: 'CODE128',
         width: 2,
-        height: 72,
+        height: 80,
         displayValue: true,
-        fontSize: 14,
-        margin: 8,
+        fontSize: 16,
+        margin: 10,
         background: '#ffffff',
         lineColor: '#000000',
       });
@@ -31,21 +31,21 @@ function BarcodeSvg({ value }: { value: string }) {
     }
   }, [value]);
 
-  return <svg ref={svgRef} className="max-w-full" />;
+  return <svg ref={svgRef} className="max-w-full print:max-w-full" />;
 }
 
 function MemberCode({ code, type }: { code: string; type: MemberCodeType }) {
   if (type === 'barcode') {
     return (
-      <div className="bg-white rounded p-2 flex justify-center">
+      <div className="bg-white rounded p-2 flex justify-center print:p-1">
         <BarcodeSvg value={code} />
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded p-3 flex justify-center">
-      <QRCodeSVG value={code} size={140} level="M" includeMargin />
+    <div className="bg-white rounded p-3 flex justify-center print:p-2">
+      <QRCodeSVG value={code} size={160} level="M" includeMargin />
     </div>
   );
 }
@@ -61,21 +61,21 @@ export default function MemberPrintCard({ name, barcodeCode, membershipTier }: M
     <div className="space-y-3">
       <div
         id="member-print-card"
-        className="member-print-card bg-white text-black rounded-xl border border-stone-300 p-6 max-w-xs mx-auto text-center space-y-3"
+        className="member-print-card bg-white text-black rounded-xl border border-stone-300 p-6 max-w-xs mx-auto text-center space-y-3 print:rounded-none print:border-none print:shadow-none print:p-4 print:max-w-none"
       >
         {settings.logo && (
-          <img src={settings.logo} alt="" className="w-12 h-12 object-cover rounded mx-auto" />
+          <img src={settings.logo} alt="" className="w-12 h-12 object-cover rounded mx-auto print:w-10 print:h-10" />
         )}
-        <p className="text-[10px] font-bold uppercase tracking-widest text-stone-500">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-stone-500 print:text-[8px]">
           {settings.name}
         </p>
-        <h3 className="text-lg font-black uppercase tracking-tight">{name}</h3>
+        <h3 className="text-lg font-black uppercase tracking-tight print:text-base">{name}</h3>
         {membershipTier && (
-          <p className="text-xs text-stone-600 uppercase tracking-wider">{membershipTier}</p>
+          <p className="text-xs text-stone-600 uppercase tracking-wider print:text-[10px]">{membershipTier}</p>
         )}
         <MemberCode code={barcodeCode} type={settings.memberCodeType} />
-        <p className="font-mono text-xs text-stone-700 tracking-widest">{barcodeCode}</p>
-        <p className="text-[9px] text-stone-400 uppercase tracking-widest">
+        <p className="font-mono text-xs text-stone-700 tracking-widest print:text-sm">{barcodeCode}</p>
+        <p className="text-[9px] text-stone-400 uppercase tracking-widest print:text-[7px]">
           Scan at front desk for check-in
         </p>
       </div>
@@ -83,7 +83,7 @@ export default function MemberPrintCard({ name, barcodeCode, membershipTier }: M
       <button
         type="button"
         onClick={handlePrint}
-        className="w-full max-w-xs mx-auto flex items-center justify-center gap-2 bg-stone-900 hover:bg-stone-800 border border-stone-700 text-stone-200 font-bold py-3 rounded text-xs uppercase tracking-widest transition-colors"
+        className="print-trigger w-full max-w-xs mx-auto flex items-center justify-center gap-2 bg-stone-900 hover:bg-stone-800 border border-stone-700 text-stone-200 font-bold py-3 rounded text-xs uppercase tracking-widest transition-colors"
       >
         <Printer size={14} className="text-red-500" />
         Print Member Card
